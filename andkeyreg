@@ -1,0 +1,103 @@
+#!/usr/bin/env python
+
+import argparse
+import os
+import magic
+import shutil
+from os.path import expanduser
+
+USER_HOME = expanduser("~")
+CURRENT_ANDROID_KEYSTORE_PATH = USER_HOME + "/.android/debug.keystore"
+ANDROID_KEYSTORES_PATH = USER_HOME + "/.android/keystores/"
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-l", "--list", help="list available keystores", action="store_true")
+    parser.add_argument("-a", "--add", help="add a new keystore")
+    parser.add_argument("-s", "--set", help="set keystore")
+    return parser.parse_args()
+
+def list_keystores():
+    print "\nAvailable keystores:"
+    keystores = safe_get_keystores()
+    for i,v in enumerate(keystores, 1):
+        print "  " + str(i) + ".    " + v 
+
+def safe_get_keystores():
+    if not os.path.exists(ANDROID_KEYSTORES_PATH):
+        os.makedirs(ANDROID_KEYSTORES_PATH)
+    return os.listdir(ANDROID_KEYSTORES_PATH)
+
+def validate_keystore(keystore):
+    if not os.path.exists(keystore) or not os.path.isfile(keystore):
+        raise InvalidKeystoreException("Error: Invalid keystore specified. Must specify path to valid keystore.")
+
+    mime = magic.Magic(mime=True)
+    if mime.from_file(keystore) != 'application/x-java-keystore':
+        raise InvalidKeystoreException("Error: Invalid keystore specified. The specified file is not a java keystore.")
+
+    return keystore
+
+def add_keystore(keystore):
+    keystore_name = os.path.basename(keystore)
+    keystores = safe_get_keystores()
+    if keystore_name == "debug.keystore":
+        print "Keystore not added! The name 'debug.keystore' conficts with the default debug keystore"
+    elif not keystore_name in keystores:
+        print "Adding keystore to list"
+        copy_keystore(keystore)
+    else:
+        print "Keystore not added! Already in list"
+
+def copy_keystore(keystore):
+    shutil.copy(keystore, ANDROID_KEYSTORES_PATH)
+
+def safe_get_selection(selection):
+    keystores = safe_get_keystores()
+    try:
+        keystore_name = keystores[int(selection)-1]
+        return ANDROID_KEYSTORES_PATH + keystore_name
+    except IndexError as e:
+        raise InvalidKeystoreSelectionException("Error: Specified keystore number not in list. Run '-l' to list available keystores")
+
+def create_symlink(target):
+    safe_remove_current()
+    os.symlink(target, CURRENT_ANDROID_KEYSTORE_PATH)
+
+def safe_remove_current():
+    if os.path.lexists(CURRENT_ANDROID_KEYSTORE_PATH):
+        os.unlink(CURRENT_ANDROID_KEYSTORE_PATH)
+    elif os.path.exists(CURRENT_ANDROID_KEYSTORE_PATH):
+        if os.path.isdir(CURRENT_ANDROID_KEYSTORE_PATH):
+            shutil.rmtree(CURRENT_ANDROID_KEYSTORE_PATH)
+        else:
+            os.remove(CURRENT_ANDROID_KEYSTORE_PATH)
+
+def main():
+    args = parse_args()
+
+    if args.list:
+        list_keystores()
+
+    if args.add:
+        try:
+           keystore = validate_keystore(args.add)
+           add_keystore(keystore)
+        except InvalidKeystoreException as e:
+            print e
+
+    if args.set:
+        try:
+           keystore = safe_get_selection(args.set)
+           create_symlink(keystore)
+        except InvalidKeystoreSelectionException as e:
+            print e
+
+class InvalidKeystoreException(Exception):
+    pass
+
+class InvalidKeystoreSelectionException(Exception):
+    pass
+
+if __name__ == "__main__":
+    main()
